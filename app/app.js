@@ -72,7 +72,11 @@ function search(q) {
     let score = 0, ok = true;
     for (const t of tokens) {
       const at = f._s.indexOf(t);
-      if (at < 0) { ok = false; break; }
+      if (at < 0) {
+        // "weetbix" should match "Weet-Bix": retry ignoring spaces
+        if ((f._c ||= f._s.replace(/ /g, "")).includes(t)) { score += 4; continue; }
+        ok = false; break;
+      }
       if (f._s[at - 1] === " ") score += 10; // starts a word
       if (at === 1) score += 8;               // starts the name
       if (/^(e?s)?( |$)/.test(f._s.slice(at + t.length, at + t.length + 3))) score += 6; // whole word or plural
