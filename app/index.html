@@ -28,7 +28,7 @@
         <svg viewBox="0 0 24 24"><path d="M3 7V4h3M21 7V4h-3M3 17v3h3M21 17v3h-3M7 8v8M10 8v8M13 8v8M17 8v8"/></svg>
       </button>
     </div>
-    <div class="seg" role="tablist" aria-label="Food source">
+    <div class="seg" id="src-seg" role="tablist" aria-label="Food source">
       <button role="tab" data-src="all" aria-selected="true">All</button>
       <button role="tab" data-src="AFCD" aria-selected="false">Whole foods</button>
       <button role="tab" data-src="OFF" aria-selected="false">Packaged</button>
@@ -42,6 +42,16 @@
         <option value="prot-asc">Best protein ratio</option>
         <option value="prot-desc">Worst protein ratio</option>
       </select>
+    </div>
+    <div class="tools">
+      <label for="minp">Min protein</label>
+      <select id="minp" class="narrow">
+        <option value="0">Any</option>
+        <option value="5">5 g+ per 100 g</option>
+        <option value="10">10 g+ per 100 g</option>
+        <option value="20">20 g+ per 100 g</option>
+      </select>
+      <label class="check"><input type="checkbox" id="hidewarn"> Hide ⚠ suspect</label>
     </div>
   </header>
 
@@ -72,9 +82,9 @@
           <li><i class="pr"></i><b>20–40</b><span>moderate</span><em>peanut butter 27</em></li>
           <li><i class="pr"></i><b>Over 40</b><span>low</span><em>white rice 51, most fruit</em></li>
         </ul>
-        <p class="note muted">Lower is better. Very low-calorie vegetables score well (broccoli 8) because they have few calories, not much protein. Foods with under 1 g protein or under 20 kcal per 100 g show “–”.</p>
+        <p class="note muted">Lower is better. Very low-calorie vegetables score well (broccoli 8) because they have few calories, not much protein; set “Min protein” to 10 g+ to screen them out. Foods with under 1 g protein or under 20 kcal per 100 g show “–”.</p>
       </div>
-      <p class="note muted">Tap ○ beside any food to add it to a side-by-side comparison. Choose a ranking with nothing typed to rank the whole database.</p>
+      <p class="note muted">Tap ○ beside any food to add it to a side-by-side comparison. Foods prepared several ways (raw, grilled, baked…) are grouped; tap “more preparations” to see them. Choose a ranking with nothing typed to rank the whole database.</p>
     </section>
     <section id="results-wrap" hidden>
       <p id="count" class="muted"></p>
@@ -101,6 +111,7 @@
       <div class="sheet-head">
         <div>
           <p id="d-sub" class="muted"></p>
+          <p id="d-cat" class="muted"></p>
           <h2 id="d-name"></h2>
         </div>
         <button id="d-close" class="icon-btn" aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
@@ -126,6 +137,17 @@
       </div>
       <p id="d-prot" class="prot"></p>
       <div class="macros" id="d-macros"></div>
+      <div class="swaps">
+        <div class="swaps-head">
+          <h3>Swaps</h3>
+          <div class="seg mini" id="d-swap-seg" role="tablist" aria-label="Swap for">
+            <button role="tab" data-swap="kcal" aria-selected="true">Lower kcal/g</button>
+            <button role="tab" data-swap="prot" aria-selected="false">More protein per kcal</button>
+          </div>
+        </div>
+        <ul id="d-swaps" class="list flat"></ul>
+        <p id="d-swaps-msg" class="muted small" hidden></p>
+      </div>
       <div class="sheet-foot">
         <span class="btns"><button id="d-fav" class="btn"></button><button id="d-pick" class="btn ghost-dark"></button></span>
         <span id="d-src" class="muted"></span>

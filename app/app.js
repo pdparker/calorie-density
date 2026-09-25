@@ -23,8 +23,20 @@ const SORTS = {
   "prot-desc": { label: "Worst protein ratio", val: (f) => ratio(f), dir: -1 },
 };
 const MAX_PICK = 20;
+const SWAP_N = 5;
 
-const state = { foods: [], src: "all", q: "", results: [], shown: 0, current: null, fuse: {}, sort: "rel", picked: new Map(), cmpSort: { col: "kcal", dir: 1 } };
+// Name segments that describe preparation rather than the food itself; stripping
+// them gives the variant group ("Chicken, breast, lean flesh, grilled" -> "Chicken, breast, lean flesh").
+const PREP = /^(raw|fresh|baked|boiled|fried|grilled|uncooked|cooked|casseroled|roasted|steamed|toasted|stir-fried|microwaved|poached|stewed|braised|simmered|barbecued|bbq'd|pan-fried|deep-fried|hard-boiled|soft-boiled|scrambled|reheated|drained|undrained|as purchased|purchased frozen|frozen|thawed|dry|from dry|no added (fat|salt|sugar|fat or salt)|.*(fat|oil) (added|used)|.*rice cooker.*|boiled or .*|.* no added (fat|salt))$/;
+const squash = (s) => (s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+function variantKey(f) {
+  if (f._v) return f._v;
+  return (f._v = f.src === "AFCD"
+    ? "A:" + f.name.split(", ").filter((x) => !PREP.test(x.trim().toLowerCase())).join(", ")
+    : "O:" + squash(f.name).replace(/s$/, "") + "|" + squash(f.brand));
+}
+
+const state = { index: new Map(), foods: [], src: "all", q: "", results: [], shown: 0, current: null, fuse: {}, sort: "rel", minP: 0, hideWarn: false, picked: new Map(), cmpSort: { col: "kcal", dir: 1 } };
 
 // Null when protein is negligible (<1 g/100 g), the food is nearly calorie-free
 // (<20 kcal/100 g, where label rounding dominates), or the figures are impossible
@@ -41,7 +53,7 @@ const store = {
   get(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } },
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
 };
-const slim = (f) => ({ id: f.id, name: f.name, brand: f.brand, qty: f.qty, group: f.group, kcal: f.kcal, kj: f.kj, p: f.p, f: f.f, c: f.c, fb: f.fb, src: f.src, warn: f.warn });
+const slim = (f) => ({ id: f.id, name: f.name, brand: f.brand, qty: f.qty, group: f.group, kcal: f.kcal, kj: f.kj, p: f.p, f: f.f, c: f.c, fb: f.fb, src: f.src, warn: f.warn, cat: f.cat, cat2: f.cat2 });
 const key = (f) => `${f.src}:${f.id}`;
 
 // ---------- text helpers ----------
@@ -65,11 +77,13 @@ async function loadData() {
   const prep = (arr) => arr.map((f, i) => ((f._s = " " + norm(`${f.name} ${f.brand || ""}`)), (f._i = i), f));
   const generic = prep(await (await fetch("foods.json")).json());
   state.foods = generic;
+  state.index = new Map(generic.map((f) => [key(f), f]));
   status();
   if (state.q || state.sort !== "rel") run();
   try {
     const branded = prep(await (await fetch("branded.json")).json());
     state.foods = generic.concat(branded);
+    for (const f of branded) state.index.set(key(f), f);
     state.fuse = {};
     status();
     if (state.q || state.sort !== "rel") run();
@@ -127,6 +141,26 @@ function search(q) {
   return { items: out, tokens };
 }
 
+function keep(f) {
+  if (state.hideWarn && f.warn) return false;
+  if (state.minP && !((f.p ?? 0) >= state.minP)) return false;
+  return true;
+}
+
+// Collapse preparation variants and duplicate listings into one row, keeping
+// the best-ranked member as the group's head.
+function group(items) {
+  const byKey = new Map();
+  const out = [];
+  for (const f of items) {
+    const k = variantKey(f);
+    const g = byKey.get(k);
+    if (g) g.push(f);
+    else { const ng = [f]; byKey.set(k, ng); out.push(ng); }
+  }
+  return out;
+}
+
 function sortItems(items) {
   const s = SORTS[state.sort];
   if (!s) return items;
@@ -142,8 +176,10 @@ function run() {
   $("#home").hidden = !!q || browsing;
   $("#results-wrap").hidden = !q && !browsing;
   if (!q && !browsing) return renderHome();
-  const { items, tokens } = q ? search(q) : { items: pool(), tokens: [] };
-  state.results = sortItems(items);
+  const found = q ? search(q) : { items: pool(), tokens: [] };
+  const tokens = found.tokens;
+  const items = found.items.filter(keep);
+  state.results = group(sortItems(items));
   state.tokens = tokens;
   state.shown = 0;
   $("#results").innerHTML = "";
@@ -155,15 +191,17 @@ function run() {
     $("#results").append(li);
   }
   const n = items.length.toLocaleString();
-  $("#count").textContent = browsing
-    ? `All ${n} ${state.src === "AFCD" ? "whole foods" : state.src === "OFF" ? "packaged products" : "foods"}, ${SORTS[state.sort].label.toLowerCase()} first`
-    : items.length ? `${n} match${items.length === 1 ? "" : "es"}` : "No matches. Try fewer or different words.";
+  const filtered = found.items.length - items.length;
+  const note = filtered ? ` (${filtered.toLocaleString()} hidden by filters)` : "";
+  $("#count").textContent = (browsing
+    ? `${n} ${state.src === "AFCD" ? "whole foods" : state.src === "OFF" ? "packaged products" : "foods"}, ${SORTS[state.sort].label.toLowerCase()} first`
+    : items.length ? `${n} match${items.length === 1 ? "" : "es"}` : "No matches. Try fewer or different words.") + note;
   more();
 }
 
 function more() {
   const slice = state.results.slice(state.shown, state.shown + PAGE);
-  $("#results").append(...slice.map((f) => rowEl(f, state.tokens)));
+  $("#results").append(...slice.map((g) => groupEl(g, state.tokens)));
   state.shown += slice.length;
   $("#more").hidden = state.shown >= state.results.length;
 }
@@ -176,15 +214,42 @@ function rowEl(f, tokens = []) {
   li.className = "item";
   li.dataset.k = key(f);
   const sub = f.src === "OFF" ? [f.brand, f.qty].filter(Boolean).join(" · ") || "Packaged product" : f.group;
-  li.innerHTML = `<button class="pick" aria-label="Add ${esc(f.name)} to comparison"></button><button class="row">
+  li.innerHTML = `<div class="line"><button class="pick" aria-label="Add ${esc(f.name)} to comparison"></button><button class="row">
     <span class="dot ${b.cls}" title="${b.label} density"></span>
     <span class="txt"><span class="nm">${highlight(f.name, tokens)}</span>
       <span class="sub">${f.src === "OFF" ? '<span class="tag">Packaged</span>' : ""}${f.warn ? '<span class="flag" title="Data looks inconsistent">⚠ </span>' : ""}${esc(sub)}</span></span>
     <span class="val${prot ? "" : " on"}"><b>${fmtK(f.kcal)}</b><small>kcal/g</small></span>
-    <span class="val${prot ? " on" : ""}"><b>${fmtR(r)}</b><small>kcal/g prot</small></span></button>`;
-  li.firstChild.setAttribute("aria-pressed", state.picked.has(key(f)));
-  li.firstChild.onclick = () => togglePick(f);
-  li.lastChild.onclick = () => openDetail(f);
+    <span class="val${prot ? " on" : ""}"><b>${fmtR(r)}</b><small>kcal/g prot</small></span></button></div>`;
+  const pick = li.querySelector(".pick");
+  pick.setAttribute("aria-pressed", state.picked.has(key(f)));
+  pick.onclick = () => togglePick(f);
+  li.querySelector(".row").onclick = () => openDetail(f);
+  return li;
+}
+
+function groupEl(g, tokens) {
+  const li = rowEl(g[0], tokens);
+  if (g.length < 2) return li;
+  const prot = state.sort.startsWith("prot");
+  const vals = g.map((f) => (prot ? ratio(f) : f.kcal)).filter((v) => v != null);
+  const fmt = prot ? fmtR : fmtK;
+  const lo = Math.min(...vals), hi = Math.max(...vals);
+  const range = vals.length ? (fmt(lo) === fmt(hi) ? fmt(lo) : `${fmt(lo)}–${fmt(hi)}`) + (prot ? " kcal/g prot" : " kcal/g") : "";
+  const what = g[0].src === "AFCD" ? "preparation" : "listing";
+  const btn = document.createElement("button");
+  btn.className = "variants";
+  btn.setAttribute("aria-expanded", "false");
+  btn.innerHTML = `<span class="chev" aria-hidden="true">▸</span> ${g.length - 1} more ${what}${g.length > 2 ? "s" : ""} · ${range}`;
+  const ul = document.createElement("ul");
+  ul.className = "sublist";
+  ul.hidden = true;
+  btn.onclick = () => {
+    const open = ul.hidden;
+    if (open && !ul.childElementCount) ul.append(...g.slice(1).map((f) => rowEl(f, tokens)));
+    ul.hidden = !open;
+    btn.setAttribute("aria-expanded", open);
+  };
+  li.append(btn, ul);
   return li;
 }
 
@@ -219,7 +284,7 @@ function savePicks() {
 }
 
 function syncPickButtons() {
-  document.querySelectorAll(".item").forEach((li) => li.firstChild.setAttribute("aria-pressed", state.picked.has(li.dataset.k)));
+  document.querySelectorAll(".item").forEach((li) => li.querySelector(".pick").setAttribute("aria-pressed", state.picked.has(li.dataset.k)));
 }
 
 const CMP_COLS = {
@@ -272,6 +337,7 @@ function toast(msg) {
 
 // ---------- detail ----------
 function openDetail(f) {
+  f = state.index.get(key(f)) || f; // saved copies (recents, picks) -> live record
   state.current = f;
   const b = band(f.kcal);
   $("#d-name").textContent = f.name;
@@ -287,15 +353,79 @@ function openDetail(f) {
     : `<b>${fmtR(r)}</b> kcal per g protein · ${PROT_BANDS.find((x) => r <= x.max).label}`;
   $("#d-warn").hidden = !f.warn;
   $("#d-src").textContent = f.src === "OFF" ? `Open Food Facts · ${f.id}` : `AFCD · ${f.id}`;
+  $("#d-cat").textContent = f.src === "OFF" && f.cat ? f.cat[0].toUpperCase() + f.cat.slice(1) : "";
   renderMacros(f);
   updatePortion();
   updateFav();
   updatePickBtn();
-  $("#detail").showModal();
+  renderSwaps();
+  const d = $("#detail");
+  if (!d.open) d.showModal();
+  d.scrollTop = 0;
 
   const recent = store.get("recent", []).filter((x) => key(x) !== key(f));
   recent.unshift(slim(f));
   store.set("recent", recent.slice(0, 8));
+}
+
+const SWAP_STOP = new Set(["and", "with", "or", "in", "of", "no", "added", "fat", "salt", "the", "a"]);
+const words = (f) => new Set((f._s || " " + norm(`${f.name} ${f.brand || ""}`)).split(" ").filter((w) => w.length > 2 && !SWAP_STOP.has(w) && !PREP.test(w)));
+
+// Similar foods that are meaningfully (10%+) better on the chosen measure.
+// Whole foods: same leading name segment ("Cheese", "Chicken"), widening to the
+// food group if that's thin. Packaged: same Open Food Facts category.
+function findSwaps(f, mode) {
+  // Close candidates always qualify; wider fallbacks must share a name word
+  // (otherwise peanut butter's "swap" is coconut water).
+  let close, wide = [];
+  if (f.src === "AFCD") {
+    const head = f.name.split(",")[0];
+    close = state.foods.filter((x) => x.src === "AFCD" && x.name.split(",")[0] === head);
+    if (close.length < 6) wide = state.foods.filter((x) => x.src === "AFCD" && x.group === f.group && x.name.split(",")[0] !== head);
+  } else {
+    if (!f.cat) return null;
+    close = state.foods.filter((x) => x.src === "OFF" && x.cat === f.cat);
+    if (close.length < 6 && f.cat2) wide = state.foods.filter((x) => x.src === "OFF" && x.cat !== f.cat && (x.cat === f.cat2 || x.cat2 === f.cat2));
+  }
+  const isWide = new Set(wide);
+  const cands = close.concat(wide);
+  const val = mode === "prot" ? ratio : (x) => x.kcal;
+  const mine = val(f);
+  const fw = words(f);
+  const seen = new Set([variantKey(f) + "|" + f.kcal]);
+  const scored = [];
+  for (const x of cands) {
+    if (x === f || x.warn || variantKey(x) === variantKey(f)) continue; // other preparations aren't swaps
+    const v = val(x);
+    if (v == null || (mine != null && v > mine * 0.9)) continue;
+    const dupe = variantKey(x) + "|" + x.kcal;
+    if (seen.has(dupe)) continue;
+    seen.add(dupe);
+    let shared = 0;
+    for (const w of words(x)) if (fw.has(w)) shared++;
+    if (!shared && isWide.has(x)) continue;
+    scored.push([shared, v, x]);
+  }
+  scored.sort((a, b) => b[0] - a[0] || a[1] - b[1]);
+  // Pick the most similar, then show them best-first
+  return scored.slice(0, SWAP_N).sort((a, b) => a[1] - b[1]).map((s) => s[2]);
+}
+
+function renderSwaps() {
+  const f = state.current;
+  const mode = state.swapMode || "kcal";
+  document.querySelectorAll("#d-swap-seg button").forEach((b) => b.setAttribute("aria-selected", b.dataset.swap === mode));
+  const list = $("#d-swaps");
+  const msg = $("#d-swaps-msg");
+  const swaps = findSwaps(f, mode);
+  list.replaceChildren(...(swaps || []).map((x) => rowEl(x)));
+  list.hidden = !swaps?.length;
+  msg.hidden = !!swaps?.length;
+  msg.textContent = swaps == null
+    ? "This product has no category in Open Food Facts, so there's nothing to compare it against."
+    : mode === "prot" && ratio(f) == null && f.p != null && f.p < 1
+      ? "No similar foods with meaningfully more protein per calorie."
+      : `No similar foods that are 10%+ ${mode === "prot" ? "better on protein ratio" : "lower in kcal/g"}.`;
 }
 
 function renderMacros(f) {
@@ -436,9 +566,9 @@ $("#q").addEventListener("input", (e) => {
 $("#q").addEventListener("keydown", (e) => { if (e.key === "Enter") e.target.blur(); });
 $("#clear").onclick = () => { $("#q").value = state.q = ""; run(); $("#q").focus(); };
 $("#more").onclick = more;
-document.querySelectorAll(".seg button").forEach((b) =>
+document.querySelectorAll("#src-seg button").forEach((b) =>
   b.addEventListener("click", () => {
-    document.querySelectorAll(".seg button").forEach((x) => x.setAttribute("aria-selected", x === b));
+    document.querySelectorAll("#src-seg button").forEach((x) => x.setAttribute("aria-selected", x === b));
     state.src = b.dataset.src;
     store.set("src", state.src);
     run();
@@ -454,6 +584,11 @@ $("#d-pick").onclick = () => togglePick(state.current);
 $("#sort").value = state.sort = SORTS[store.get("sort")] ? store.get("sort") : "rel";
 $("#sort").addEventListener("change", (e) => { state.sort = e.target.value; store.set("sort", state.sort); run(); });
 $("#tray-go").onclick = openCompare;
+$("#minp").value = state.minP = [0, 5, 10, 20].includes(store.get("minP")) ? store.get("minP") : 0;
+$("#minp").addEventListener("change", (e) => { state.minP = +e.target.value; store.set("minP", state.minP); run(); });
+$("#hidewarn").checked = state.hideWarn = store.get("hideWarn", false) === true;
+$("#hidewarn").addEventListener("change", (e) => { state.hideWarn = e.target.checked; store.set("hideWarn", state.hideWarn); run(); });
+$("#d-swap-seg").addEventListener("click", (e) => { const m = e.target.closest("button")?.dataset.swap; if (m) { state.swapMode = m; renderSwaps(); } });
 $("#tray-clear").onclick = () => { state.picked.clear(); savePicks(); };
 $("#cmp-close").onclick = () => $("#compare").close();
 $("#cmp-head").addEventListener("click", (e) => {
@@ -479,7 +614,7 @@ $("#scan-go").onclick = () => { const v = $("#scan-manual").value.trim(); if (v)
 $("#scan-manual").addEventListener("keydown", (e) => { if (e.key === "Enter") $("#scan-go").click(); });
 
 const savedSrc = store.get("src", "all");
-document.querySelector(`.seg button[data-src="${savedSrc}"]`)?.click();
+(document.querySelector(`#src-seg button[data-src="${savedSrc}"]`) || document.querySelector("#src-seg button"))?.click();
 
 renderHome();
 loadData();

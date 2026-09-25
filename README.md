@@ -11,6 +11,9 @@ Installable web app (PWA) that shows **calories per gram** for Australian whole 
 - Search (typo- and plural-tolerant), whole foods / packaged filter
 - **Rank by** kcal/g or protein ratio (kcal per g protein, lower = more protein per calorie). With nothing typed, ranks the whole database.
 - **Compare:** tap ○ on any row to select (up to 20); the tray opens a side-by-side table sortable by any column. Selection persists per device.
+- **Filters:** minimum protein (5/10/20 g per 100 g) and "hide ⚠ suspect" apply to search and rankings
+- **Variants grouped:** preparations of one whole food (raw, grilled, baked…) and repeat listings of one product collapse into a single row with an expandable range
+- **Swaps:** each food's page suggests up to 5 similar foods that are 10%+ lower in kcal/g or better on protein ratio. Whole foods match on name and food group; packaged products on Open Food Facts category (~37% of products have one)
 - Protein ratio is shown as "–" when protein < 1 g/100 g, energy < 20 kcal/100 g, or the ratio is below 4 (physically impossible, so a data error)
 
 ## Layout

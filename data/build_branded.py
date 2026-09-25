@@ -21,9 +21,14 @@ CACHE = HERE / "raw" / "off_au.jsonl"
 OUT = HERE.parent / "app" / "branded.json"
 API = "https://search.openfoodfacts.org/search"
 BASE_Q = 'countries_tags:"en:australia"'
-FIELDS = "code,product_name,product_name_en,brands,quantity,nutriments,unique_scans_n"
+FIELDS = "code,product_name,product_name_en,brands,quantity,nutriments,unique_scans_n,categories_tags"
 PAGE = 200
 UA = "CalorieDensityPWA/0.1 (personal project)"
+# Categories too broad to find like-for-like swaps
+GENERIC = {"groceries", "foods", "snacks", "sweet snacks", "salty snacks", "beverages", "plant based foods",
+           "plant based foods and beverages", "beverages and beverages preparations", "dairies", "meals",
+           "condiments", "baking", "cereals and potatoes", "fruits and vegetables based foods", "unsweetened beverages",
+           "fermented foods", "fermented milk products", "desserts", "frozen foods", "canned foods", "dried products"}
 
 
 def get(q, page=1, size=PAGE, fields=FIELDS):
@@ -107,6 +112,10 @@ def main():
                 warn = 1
         warned += warn
 
+        # Most specific English categories, e.g. ["biscuits", "chocolate biscuits"]
+        cats = [c[3:].replace("-", " ") for c in (r.get("categories_tags") or []) if c.startswith("en:")]
+        cats = [c for c in cats if c not in GENERIC][-2:]
+
         brands = r.get("brands") or ""
         brand = (brands[0] if isinstance(brands, list) and brands else str(brands).split(",")[0]).strip()
         item = {
@@ -114,6 +123,7 @@ def main():
             "kcal": round(kcal / 100, 2), "kj": round(kcal * 4.184 / 100, 2),
             "p": None if p is None else round(p, 1), "f": None if f is None else round(f, 1),
             "c": None if c is None else round(c, 1), "fb": None if fb is None else round(fb, 1),
+            "cat": cats[-1] if cats else None, "cat2": cats[0] if len(cats) == 2 else None,
             "src": "OFF", "warn": warn, "_pop": r.get("unique_scans_n") or 0,
         }
         out.append({k: v for k, v in item.items() if v not in (None, "", 0) or k in ("kcal", "kj", "_pop")})
@@ -130,6 +140,21 @@ def main():
             deduped.append(x)
     dupes = len(out) - len(deduped)
     out = deduped
+
+    # Borrow a category from other listings with the same name ("Tim Tam" entered twice,
+    # only one categorised) so more products get like-for-like swaps.
+    by_name = {}
+    for x in out:
+        if x.get("cat"):
+            by_name.setdefault(squash(x["name"]), (x["cat"], x.get("cat2")))
+    borrowed = 0
+    for x in out:
+        if not x.get("cat") and squash(x["name"]) in by_name:
+            x["cat"], cat2 = by_name[squash(x["name"])]
+            if cat2:
+                x["cat2"] = cat2
+            borrowed += 1
+    print(f"categories: {sum(1 for x in out if x.get('cat'))} products ({borrowed} borrowed by name)")
     for x in out:
         x.pop("_pop")
     OUT.write_text(json.dumps(out, separators=(",", ":"), ensure_ascii=False))
