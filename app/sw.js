@@ -1,10 +1,10 @@
 // Cache-first app shell; data files refresh in the background.
-const VERSION = "v4";
+const VERSION = "v5";
 const SHELL = ["./", "index.html", "styles.css", "app.js", "vendor/fuse.min.mjs", "foods.json", "branded.json",
   "manifest.webmanifest", "icons/icon.svg", "icons/icon-192.png", "icons/icon-512.png"];
 
 self.addEventListener("install", (e) => {
-  e.waitUntil(caches.open(VERSION).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  e.waitUntil(caches.open(VERSION).then((c) => c.addAll(SHELL.map((u) => new Request(u, { cache: "reload" })))).then(() => self.skipWaiting()));
 });
 
 self.addEventListener("activate", (e) => {
