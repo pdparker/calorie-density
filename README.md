@@ -6,6 +6,13 @@ Installable web app (PWA) that shows **calories per gram** for Australian whole 
 - **Packaged products:** Open Food Facts, products sold in Australia, bundled for offline search. Community-entered, and the app flags entries whose energy disagrees with their macros.
 - **Barcode scan:** native `BarcodeDetector` where available, polyfill (loaded from jsDelivr) elsewhere, e.g. iOS Safari. Unknown barcodes are looked up live on Open Food Facts.
 
+## Features
+
+- Search (typo- and plural-tolerant), whole foods / packaged filter
+- **Rank by** kcal/g or protein ratio (kcal per g protein, lower = more protein per calorie). With nothing typed, ranks the whole database.
+- **Compare:** tap ○ on any row to select (up to 20); the tray opens a side-by-side table sortable by any column. Selection persists per device.
+- Protein ratio is shown as "–" when protein < 1 g/100 g, energy < 20 kcal/100 g, or the ratio is below 4 (physically impossible, so a data error)
+
 ## Layout
 
 ```

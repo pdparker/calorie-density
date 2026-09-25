@@ -136,3 +136,82 @@ dialog::backdrop { background: rgb(0 0 0 / .45); }
 #scan-msg { position: absolute; top: 12px; left: 0; right: 0; text-align: center; margin: 0; font-size: .9rem; text-shadow: 0 1px 3px #000; }
 .scan-actions { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px; }
 .scan-actions input { flex: 1 1 160px; font: inherit; padding: 9px 12px; border-radius: 10px; border: 1px solid #444; background: #1a1a1a; color: #fff; }
+
+/* ---------- ranking ---------- */
+.tools { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: .88rem; }
+.tools label { color: var(--muted); flex: none; }
+.tools select {
+  flex: 1; min-width: 0; font: inherit; font-size: .9rem; color: var(--ink); background: var(--surface);
+  border: 1px solid var(--line); border-radius: 10px; padding: 7px 10px;
+}
+.note { font-size: .82rem; margin: 10px 2px 0; }
+.legend .pr { background: #5b8def; }
+
+/* two value columns; the ranked one is emphasised */
+.row .val { width: 58px; }
+.row .val b { font-size: 1rem; color: var(--muted); font-weight: 600; }
+.row .val.on b { font-size: 1.15rem; color: var(--ink); font-weight: 700; }
+.row .val small { line-height: 1.1; }
+.row { padding-left: 4px; }
+
+/* ---------- compare selection ---------- */
+.item { display: flex; align-items: stretch; }
+.item .row { flex: 1; min-width: 0; }
+.pick {
+  flex: none; width: 44px; border: 0; background: none; cursor: pointer; display: grid; place-items: center; padding: 0;
+}
+.pick::before {
+  content: ""; width: 20px; height: 20px; border-radius: 50%; border: 2px solid var(--line); box-sizing: border-box;
+}
+.pick:hover::before { border-color: var(--accent); }
+.pick[aria-pressed="true"]::before {
+  border-color: var(--accent); background: var(--accent)
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12.5l4.5 4.5L19 7.5'/%3E%3C/svg%3E") center / 14px no-repeat;
+}
+
+.tray {
+  position: fixed; z-index: 10; left: 50%; transform: translateX(-50%);
+  bottom: calc(12px + env(safe-area-inset-bottom)); width: min(608px, calc(100% - 32px));
+  display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 16px;
+  background: var(--ink); color: var(--bg); border-radius: 999px; box-shadow: 0 8px 24px rgb(0 0 0 / .25);
+}
+.tray span { flex: 1; font-weight: 600; font-size: .92rem; }
+.tray .btn:disabled { opacity: .45; cursor: default; }
+.btn.ghost-dark { background: none; color: inherit; border: 1px solid currentColor; opacity: .85; }
+body.has-tray .foot { padding-bottom: calc(90px + env(safe-area-inset-bottom)); }
+.toast {
+  position: fixed; z-index: 20; left: 50%; transform: translateX(-50%); top: calc(16px + env(safe-area-inset-top));
+  background: var(--ink); color: var(--bg); padding: 8px 14px; border-radius: 10px; font-size: .9rem;
+}
+
+/* ---------- detail additions ---------- */
+.prot { margin: 12px 0 0; font-size: .92rem; }
+.prot b { font-size: 1.05rem; }
+.btns { display: flex; gap: 8px; flex-wrap: wrap; }
+#d-pick[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); opacity: 1; }
+
+/* ---------- compare table ---------- */
+.cmp-hint { font-size: .82rem; margin: 4px 0 10px; }
+.cmp-wrap { overflow-x: auto; margin: 0 -18px; padding: 0 18px; max-height: 70dvh; }
+.cmp { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; font-size: .9rem; }
+.cmp thead th { position: sticky; top: 0; background: var(--surface); z-index: 1; vertical-align: bottom; }
+.cmp thead button {
+  border: 0; background: none; color: var(--muted); font: inherit; font-size: .75rem; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .03em; cursor: pointer; padding: 6px 4px; text-align: right; line-height: 1.2;
+}
+.cmp thead th[aria-sort="ascending"] button, .cmp thead th[aria-sort="descending"] button { color: var(--ink); }
+.cmp th, .cmp td { padding: 8px 3px; border-bottom: 1px solid var(--line); }
+.cmp thead th:first-child { text-align: left; font-size: .75rem; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
+.cmp tbody th { text-align: left; font-weight: 400; min-width: 104px; }
+.cmp .who { display: flex; gap: 4px; align-items: baseline; }
+.cmp tbody th small { display: block; color: var(--muted); font-size: .76rem; padding-left: 18px; }
+.cmp td { text-align: right; white-space: nowrap; color: var(--muted); min-width: 48px; position: relative; }
+.cmp td.on { color: var(--ink); font-weight: 700; }
+.cmp td:last-child { min-width: 0; width: 28px; padding: 0; }
+.cmp .rm { width: 28px; height: 36px; }
+.cmp .rank { flex: none; width: 14px; color: var(--muted); font-size: .78rem; }
+.cmp .cmp-name { border: 0; background: none; color: inherit; font: inherit; text-align: left; padding: 0; cursor: pointer; display: inline; }
+.cmp .cmp-name .dot { display: inline-block; width: 8px; height: 8px; margin-right: 5px; vertical-align: 1px; }
+.cmp .bar { display: block; height: 4px; border-radius: 2px; background: var(--accent); margin: 4px 0 0 auto; }
+.cmp .rm svg { width: 16px; height: 16px; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }

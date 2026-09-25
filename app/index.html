@@ -33,6 +33,16 @@
       <button role="tab" data-src="AFCD" aria-selected="false">Whole foods</button>
       <button role="tab" data-src="OFF" aria-selected="false">Packaged</button>
     </div>
+    <div class="tools">
+      <label for="sort">Rank by</label>
+      <select id="sort">
+        <option value="rel">Best match</option>
+        <option value="kcal-asc">Lowest kcal/g</option>
+        <option value="kcal-desc">Highest kcal/g</option>
+        <option value="prot-asc">Best protein ratio</option>
+        <option value="prot-desc">Worst protein ratio</option>
+      </select>
+    </div>
   </header>
 
   <main id="main">
@@ -54,6 +64,17 @@
           <li><i class="b3"></i><b>High</b><span>over 4</span><em>nuts, chocolate, oils, chips</em></li>
         </ul>
       </div>
+      <div class="legend">
+        <h2>Protein ratio: kcal per g protein</h2>
+        <ul>
+          <li><i class="pr"></i><b>Under 10</b><span>very high protein</span><em>chicken breast 4.4, tuna 4.9, eggs 10</em></li>
+          <li><i class="pr"></i><b>10–20</b><span>high</span><em>tofu 10, cheddar 16, milk 20</em></li>
+          <li><i class="pr"></i><b>20–40</b><span>moderate</span><em>peanut butter 27</em></li>
+          <li><i class="pr"></i><b>Over 40</b><span>low</span><em>white rice 51, most fruit</em></li>
+        </ul>
+        <p class="note muted">Lower is better. Very low-calorie vegetables score well (broccoli 8) because they have few calories, not much protein. Foods with under 1 g protein or under 20 kcal per 100 g show “–”.</p>
+      </div>
+      <p class="note muted">Tap ○ beside any food to add it to a side-by-side comparison. Choose a ranking with nothing typed to rank the whole database.</p>
     </section>
     <section id="results-wrap" hidden>
       <p id="count" class="muted"></p>
@@ -61,6 +82,13 @@
       <button id="more" class="more" hidden>Show more</button>
     </section>
   </main>
+
+  <div id="tray" class="tray" hidden>
+    <span id="tray-n"></span>
+    <button id="tray-clear" class="btn ghost-dark">Clear</button>
+    <button id="tray-go" class="btn">Compare</button>
+  </div>
+  <div id="toast" class="toast" role="status" hidden></div>
 
   <footer class="foot muted">
     Whole foods: <a href="https://www.foodstandards.gov.au/science-data/food-nutrient-databases/afcd" target="_blank" rel="noopener">AFCD Release 3</a>, FSANZ.
@@ -96,10 +124,27 @@
           <button data-g="30">30 g</button><button data-g="50">50 g</button><button data-g="100">100 g</button><button data-g="150">150 g</button><button data-g="250">250 g</button>
         </div>
       </div>
+      <p id="d-prot" class="prot"></p>
       <div class="macros" id="d-macros"></div>
       <div class="sheet-foot">
-        <button id="d-fav" class="btn"></button>
+        <span class="btns"><button id="d-fav" class="btn"></button><button id="d-pick" class="btn ghost-dark"></button></span>
         <span id="d-src" class="muted"></span>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="compare" aria-labelledby="cmp-title">
+    <div class="sheet">
+      <div class="sheet-head">
+        <h2 id="cmp-title">Compare</h2>
+        <button id="cmp-close" class="icon-btn" aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+      </div>
+      <p class="muted cmp-hint">Tap a column heading to rank by it; tap again to reverse.</p>
+      <div class="cmp-wrap">
+        <table class="cmp">
+          <thead><tr id="cmp-head"></tr></thead>
+          <tbody id="cmp-body"></tbody>
+        </table>
       </div>
     </div>
   </dialog>

@@ -9,7 +9,32 @@ const BANDS = [
   { max: Infinity, cls: "b3", label: "High" },
 ];
 
-const state = { foods: [], src: "all", q: "", results: [], shown: 0, current: null, fuse: {} };
+// kcal per gram of protein: lower = more protein per calorie
+const PROT_BANDS = [
+  { max: 10, label: "Very high protein" },
+  { max: 20, label: "High protein" },
+  { max: 40, label: "Moderate protein" },
+  { max: Infinity, label: "Low protein" },
+];
+const SORTS = {
+  "kcal-asc": { label: "Lowest kcal/g", val: (f) => f.kcal, dir: 1 },
+  "kcal-desc": { label: "Highest kcal/g", val: (f) => f.kcal, dir: -1 },
+  "prot-asc": { label: "Best protein ratio", val: (f) => ratio(f), dir: 1 },
+  "prot-desc": { label: "Worst protein ratio", val: (f) => ratio(f), dir: -1 },
+};
+const MAX_PICK = 20;
+
+const state = { foods: [], src: "all", q: "", results: [], shown: 0, current: null, fuse: {}, sort: "rel", picked: new Map(), cmpSort: { col: "kcal", dir: 1 } };
+
+// Null when protein is negligible (<1 g/100 g), the food is nearly calorie-free
+// (<20 kcal/100 g, where label rounding dominates), or the figures are impossible
+// (pure protein is ~4 kcal/g, so anything below that is a data error).
+function ratio(f) {
+  if (!(f.p >= 1) || f.kcal < 0.2) return null;
+  const r = (f.kcal * 100) / f.p;
+  return r < 4 ? null : r;
+}
+const fmtR = (r) => (r == null ? "–" : r < 100 ? r.toFixed(1) : Math.round(r).toString());
 
 // ---------- storage (per-device conveniences; failure-tolerant) ----------
 const store = {
@@ -41,13 +66,13 @@ async function loadData() {
   const generic = prep(await (await fetch("foods.json")).json());
   state.foods = generic;
   status();
-  if (state.q) run();
+  if (state.q || state.sort !== "rel") run();
   try {
     const branded = prep(await (await fetch("branded.json")).json());
     state.foods = generic.concat(branded);
     state.fuse = {};
     status();
-    if (state.q) run();
+    if (state.q || state.sort !== "rel") run();
   } catch {
     $("#ds-status").textContent = " Packaged-product list unavailable offline; barcode lookup still works online.";
   }
@@ -102,14 +127,23 @@ function search(q) {
   return { items: out, tokens };
 }
 
+function sortItems(items) {
+  const s = SORTS[state.sort];
+  if (!s) return items;
+  // Missing values and flagged (suspect) entries always sink to the bottom
+  const k = (f) => { const v = s.val(f); return v == null ? Infinity : (f.warn ? 1e9 : 0) + s.dir * v; };
+  return items.map((f) => [k(f), f]).sort((a, b) => a[0] - b[0]).map((x) => x[1]);
+}
+
 function run() {
   const q = state.q.trim();
+  const browsing = !q && state.sort !== "rel";
   $("#clear").hidden = !q;
-  $("#home").hidden = !!q;
-  $("#results-wrap").hidden = !q;
-  if (!q) return renderHome();
-  const { items, tokens } = search(q);
-  state.results = items;
+  $("#home").hidden = !!q || browsing;
+  $("#results-wrap").hidden = !q && !browsing;
+  if (!q && !browsing) return renderHome();
+  const { items, tokens } = q ? search(q) : { items: pool(), tokens: [] };
+  state.results = sortItems(items);
   state.tokens = tokens;
   state.shown = 0;
   $("#results").innerHTML = "";
@@ -120,7 +154,10 @@ function run() {
     li.firstChild.onclick = () => lookupBarcode(digits);
     $("#results").append(li);
   }
-  $("#count").textContent = items.length ? `${items.length.toLocaleString()} match${items.length === 1 ? "" : "es"}` : "No matches. Try fewer or different words.";
+  const n = items.length.toLocaleString();
+  $("#count").textContent = browsing
+    ? `All ${n} ${state.src === "AFCD" ? "whole foods" : state.src === "OFF" ? "packaged products" : "foods"}, ${SORTS[state.sort].label.toLowerCase()} first`
+    : items.length ? `${n} match${items.length === 1 ? "" : "es"}` : "No matches. Try fewer or different words.";
   more();
 }
 
@@ -133,14 +170,21 @@ function more() {
 
 function rowEl(f, tokens = []) {
   const b = band(f.kcal);
+  const r = ratio(f);
+  const prot = state.sort.startsWith("prot");
   const li = document.createElement("li");
+  li.className = "item";
+  li.dataset.k = key(f);
   const sub = f.src === "OFF" ? [f.brand, f.qty].filter(Boolean).join(" · ") || "Packaged product" : f.group;
-  li.innerHTML = `<button class="row">
+  li.innerHTML = `<button class="pick" aria-label="Add ${esc(f.name)} to comparison"></button><button class="row">
     <span class="dot ${b.cls}" title="${b.label} density"></span>
     <span class="txt"><span class="nm">${highlight(f.name, tokens)}</span>
       <span class="sub">${f.src === "OFF" ? '<span class="tag">Packaged</span>' : ""}${f.warn ? '<span class="flag" title="Data looks inconsistent">⚠ </span>' : ""}${esc(sub)}</span></span>
-    <span class="val"><b>${fmtK(f.kcal)}</b><small>kcal/g</small></span></button>`;
-  li.firstChild.onclick = () => openDetail(f);
+    <span class="val${prot ? "" : " on"}"><b>${fmtK(f.kcal)}</b><small>kcal/g</small></span>
+    <span class="val${prot ? " on" : ""}"><b>${fmtR(r)}</b><small>kcal/g prot</small></span></button>`;
+  li.firstChild.setAttribute("aria-pressed", state.picked.has(key(f)));
+  li.firstChild.onclick = () => togglePick(f);
+  li.lastChild.onclick = () => openDetail(f);
   return li;
 }
 
@@ -151,6 +195,79 @@ function renderHome() {
   $("#recent-wrap").hidden = !recent.length;
   $("#favs").replaceChildren(...favs.map((f) => rowEl(f)));
   $("#recent").replaceChildren(...recent.map((f) => rowEl(f)));
+}
+
+// ---------- compare ----------
+function togglePick(f) {
+  const k = key(f);
+  if (state.picked.has(k)) state.picked.delete(k);
+  else if (state.picked.size >= MAX_PICK) return toast(`Compare up to ${MAX_PICK} items`);
+  else state.picked.set(k, slim(f));
+  savePicks();
+}
+
+function savePicks() {
+  store.set("picked", [...state.picked.values()]);
+  const n = state.picked.size;
+  $("#tray").hidden = !n;
+  $("#tray-n").textContent = `${n} selected`;
+  $("#tray-go").disabled = n < 2;
+  document.body.classList.toggle("has-tray", !!n);
+  syncPickButtons();
+  if ($("#compare").open) renderCompare();
+  if ($("#detail").open && state.current) updatePickBtn();
+}
+
+function syncPickButtons() {
+  document.querySelectorAll(".item").forEach((li) => li.firstChild.setAttribute("aria-pressed", state.picked.has(li.dataset.k)));
+}
+
+const CMP_COLS = {
+  kcal: { label: "kcal/g", val: (f) => f.kcal, fmt: fmtK },
+  p: { label: "Protein g/100 g", val: (f) => f.p ?? null, fmt: (v) => (v == null ? "–" : v.toFixed(1)) },
+  ratio: { label: "kcal per g protein", val: ratio, fmt: fmtR },
+};
+
+function renderCompare() {
+  const { col, dir } = state.cmpSort;
+  const c = CMP_COLS[col];
+  const items = [...state.picked.values()].sort((a, b) => {
+    const va = c.val(a), vb = c.val(b);
+    if (va == null) return 1;
+    if (vb == null) return -1;
+    return dir * (va - vb);
+  });
+  const max = Math.max(...items.map((f) => c.val(f) ?? 0), 0) || 1;
+  $("#cmp-head").innerHTML = `<th scope="col">Food</th>` + Object.entries(CMP_COLS).map(([k, cc]) =>
+    `<th scope="col" aria-sort="${k === col ? (dir > 0 ? "ascending" : "descending") : "none"}"><button data-col="${k}">${cc.label}${k === col ? (dir > 0 ? " ↑" : " ↓") : ""}</button></th>`).join("") + `<th><span class="sr">Remove</span></th>`;
+  $("#cmp-body").innerHTML = items.map((f, i) => {
+    const b = band(f.kcal);
+    return `<tr data-k="${esc(key(f))}">
+      <th scope="row"><span class="who"><span class="rank">${i + 1}</span><button class="cmp-name"><span class="dot ${b.cls}"></span>${esc(f.name)}${f.warn ? ' <span class="flag">⚠</span>' : ""}</button></span>${f.brand ? `<small>${esc(f.brand)}</small>` : ""}</th>
+      ${Object.entries(CMP_COLS).map(([k, cc]) => {
+        const v = cc.val(f);
+        return `<td class="${k === col ? "on" : ""}">${cc.fmt(v)}${k === col && v != null ? `<i class="bar" style="width:${Math.max(4, (v / max) * 100)}%"></i>` : ""}</td>`;
+      }).join("")}
+      <td><button class="icon-btn rm" aria-label="Remove ${esc(f.name)}"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button></td></tr>`;
+  }).join("");
+  if (items.length < 2) $("#compare").close();
+}
+
+function openCompare() {
+  // Default the comparison to whatever the list is ranked by
+  if (state.sort.startsWith("prot")) state.cmpSort = { col: "ratio", dir: state.sort.endsWith("asc") ? 1 : -1 };
+  else if (state.sort.startsWith("kcal")) state.cmpSort = { col: "kcal", dir: state.sort.endsWith("asc") ? 1 : -1 };
+  renderCompare();
+  $("#compare").showModal();
+}
+
+let toastT;
+function toast(msg) {
+  const el = $("#toast");
+  el.textContent = msg;
+  el.hidden = false;
+  clearTimeout(toastT);
+  toastT = setTimeout(() => (el.hidden = true), 2200);
 }
 
 // ---------- detail ----------
@@ -164,11 +281,16 @@ function openDetail(f) {
   const bandEl = $("#d-band");
   bandEl.className = `band ${b.cls}`;
   bandEl.textContent = `${b.label} density`;
+  const r = ratio(f);
+  $("#d-prot").innerHTML = r == null
+    ? `<b>–</b> kcal per g protein <span class="muted">(${f.p == null ? "protein not listed" : f.p < 1 ? "under 1 g protein per 100 g" : f.kcal < 0.2 ? "too few calories to rate" : "figures look wrong"})</span>`
+    : `<b>${fmtR(r)}</b> kcal per g protein · ${PROT_BANDS.find((x) => r <= x.max).label}`;
   $("#d-warn").hidden = !f.warn;
   $("#d-src").textContent = f.src === "OFF" ? `Open Food Facts · ${f.id}` : `AFCD · ${f.id}`;
   renderMacros(f);
   updatePortion();
   updateFav();
+  updatePickBtn();
   $("#detail").showModal();
 
   const recent = store.get("recent", []).filter((x) => key(x) !== key(f));
@@ -298,6 +420,12 @@ function closeScanner() {
   if ($("#scanner").open) $("#scanner").close();
 }
 
+function updatePickBtn() {
+  const on = state.picked.has(key(state.current));
+  $("#d-pick").textContent = on ? "✓ Comparing" : "+ Compare";
+  $("#d-pick").setAttribute("aria-pressed", on);
+}
+
 // ---------- wiring ----------
 let t;
 $("#q").addEventListener("input", (e) => {
@@ -321,8 +449,29 @@ $("#d-g").addEventListener("input", updatePortion);
 $("#d-chips").addEventListener("click", (e) => { const g = e.target.dataset?.g; if (g) { $("#d-g").value = g; updatePortion(); } });
 $("#d-close").onclick = () => $("#detail").close();
 $("#d-fav").onclick = toggleFav;
-$("#detail").addEventListener("close", () => { if (!state.q) renderHome(); });
-for (const d of ["#detail", "#scanner"]) $(d).addEventListener("click", (e) => { if (e.target === e.currentTarget) d === "#scanner" ? closeScanner() : $(d).close(); });
+$("#detail").addEventListener("close", () => { if (!$("#home").hidden) renderHome(); });
+$("#d-pick").onclick = () => togglePick(state.current);
+$("#sort").value = state.sort = SORTS[store.get("sort")] ? store.get("sort") : "rel";
+$("#sort").addEventListener("change", (e) => { state.sort = e.target.value; store.set("sort", state.sort); run(); });
+$("#tray-go").onclick = openCompare;
+$("#tray-clear").onclick = () => { state.picked.clear(); savePicks(); };
+$("#cmp-close").onclick = () => $("#compare").close();
+$("#cmp-head").addEventListener("click", (e) => {
+  const col = e.target.closest("button")?.dataset.col;
+  if (!col) return;
+  state.cmpSort = { col, dir: state.cmpSort.col === col ? -state.cmpSort.dir : 1 };
+  renderCompare();
+});
+$("#cmp-body").addEventListener("click", (e) => {
+  const k = e.target.closest("tr")?.dataset.k;
+  const f = k && state.picked.get(k);
+  if (!f) return;
+  if (e.target.closest(".rm")) { state.picked.delete(k); savePicks(); }
+  else if (e.target.closest(".cmp-name")) openDetail(f);
+});
+for (const f of store.get("picked", [])) state.picked.set(key(f), f);
+savePicks();
+for (const d of ["#detail", "#scanner", "#compare"]) $(d).addEventListener("click", (e) => { if (e.target === e.currentTarget) d === "#scanner" ? closeScanner() : $(d).close(); });
 $("#scanner").addEventListener("cancel", closeScanner);
 $("#scan").onclick = openScanner;
 $("#scan-close").onclick = closeScanner;
@@ -335,6 +484,6 @@ document.querySelector(`.seg button[data-src="${savedSrc}"]`)?.click();
 renderHome();
 loadData();
 
-if ("serviceWorker" in navigator && location.protocol !== "file:") {
+if ("serviceWorker" in navigator && location.protocol === "https:") { // skip on localhost so edits show immediately
   navigator.serviceWorker.register("sw.js").catch(() => {});
 }

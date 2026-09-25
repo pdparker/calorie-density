@@ -1,5 +1,5 @@
 // Cache-first app shell; data files refresh in the background.
-const VERSION = "v5";
+const VERSION = "v6";
 const SHELL = ["./", "index.html", "styles.css", "app.js", "vendor/fuse.min.mjs", "foods.json", "branded.json",
   "manifest.webmanifest", "icons/icon.svg", "icons/icon-192.png", "icons/icon-512.png"];
 
